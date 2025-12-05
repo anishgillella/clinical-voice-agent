@@ -39,7 +39,7 @@ class TestFunctionToolDefinitions:
         sig = inspect.signature(update_patient_record)
         params = list(sig.parameters.keys())
         
-        expected_params = ['name', 'age', 'symptom', 'severity', 'duration', 'medication']
+        expected_params = ['name', 'age', 'symptom', 'symptom_severity', 'symptom_duration', 'overall_severity', 'overall_duration', 'medication']
         for param in expected_params:
             assert param in params, f"Missing parameter: {param}"
 
@@ -62,33 +62,35 @@ class TestPatientRecordUpdates:
     
     def test_update_multiple_fields(self):
         """Test updating multiple fields at once."""
-        from agent import reset_patient_record, get_patient_record
+        from agent import reset_patient_record, get_patient_record, Symptom
         
         reset_patient_record()
         record = get_patient_record()
         
         record.name = "Jane Smith"
         record.age = 35
-        record.symptoms = ["headache", "fever"]
-        record.severity = 7
+        record.add_symptom("headache", 7)
+        record.add_symptom("fever", 6)
+        record.overall_severity = 7
         
         assert record.name == "Jane Smith"
         assert record.age == 35
-        assert record.symptoms == ["headache", "fever"]
-        assert record.severity == 7
+        assert len(record.symptoms) == 2
+        assert record.overall_severity == 7
     
     def test_symptoms_list_append(self):
-        """Test that symptoms can be appended."""
+        """Test that symptoms can be appended using add_symptom."""
         from agent import reset_patient_record, get_patient_record
         
         reset_patient_record()
         record = get_patient_record()
         
-        record.symptoms.append("cough")
-        record.symptoms.append("fatigue")
+        record.add_symptom("cough", 5)
+        record.add_symptom("fatigue", 3)
         
-        assert "cough" in record.symptoms
-        assert "fatigue" in record.symptoms
+        symptom_names = record.get_symptom_names()
+        assert "cough" in symptom_names
+        assert "fatigue" in symptom_names
         assert len(record.symptoms) == 2
     
     def test_medications_list_update(self):
@@ -110,10 +112,10 @@ class TestPatientRecordUpdates:
         reset_patient_record()
         record = get_patient_record()
         
-        # Test various severity levels
+        # Test various overall_severity levels
         for severity in [1, 5, 10]:
-            record.severity = severity
-            assert record.severity == severity
+            record.overall_severity = severity
+            assert record.overall_severity == severity
 
 
 class TestDataBroadcasting:
@@ -121,14 +123,15 @@ class TestDataBroadcasting:
     
     def test_patient_record_to_dict(self):
         """Test PatientRecord conversion to dict for broadcasting."""
-        from agent import PatientRecord
+        from agent import PatientRecord, Symptom
         
+        symptoms = [Symptom(name="pain", severity=5, duration="2 days")]
         record = PatientRecord(
             name="Test Patient",
             age=30,
-            symptoms=["pain"],
-            severity=5,
-            duration="2 days",
+            symptoms=symptoms,
+            overall_severity=5,
+            overall_duration="2 days",
             medications=["tylenol"]
         )
         
@@ -137,21 +140,24 @@ class TestDataBroadcasting:
         assert isinstance(data, dict)
         assert data["name"] == "Test Patient"
         assert data["age"] == 30
-        assert data["symptoms"] == ["pain"]
-        assert data["severity"] == 5
-        assert data["duration"] == "2 days"
+        assert len(data["symptoms"]) == 1
+        assert data["symptoms"][0]["name"] == "pain"
+        assert data["symptoms"][0]["duration"] == "2 days"
+        assert data["overall_severity"] == 5
+        assert data["overall_duration"] == "2 days"
         assert data["medications"] == ["tylenol"]
     
     def test_patient_record_to_json(self):
         """Test PatientRecord JSON serialization."""
-        from agent import PatientRecord
+        from agent import PatientRecord, Symptom
         
+        symptoms = [Symptom(name="nausea", severity=3, duration="1 week")]
         record = PatientRecord(
             name="JSON Patient",
             age=25,
-            symptoms=["nausea"],
-            severity=3,
-            duration="1 week",
+            symptoms=symptoms,
+            overall_severity=3,
+            overall_duration="1 week",
             medications=[]
         )
         
@@ -164,14 +170,15 @@ class TestDataBroadcasting:
     
     def test_broadcast_message_format(self):
         """Test that broadcast message has correct format."""
-        from agent import PatientRecord
+        from agent import PatientRecord, Symptom
         
+        symptoms = [Symptom(name="dizziness", severity=6, duration="3 days")]
         record = PatientRecord(
             name="Broadcast Test",
             age=40,
-            symptoms=["dizziness"],
-            severity=6,
-            duration="3 days",
+            symptoms=symptoms,
+            overall_severity=6,
+            overall_duration="3 days",
             medications=["medicine"]
         )
         
@@ -187,14 +194,15 @@ class TestDataBroadcasting:
     
     def test_session_end_message_format(self):
         """Test session end message format."""
-        from agent import PatientRecord
+        from agent import PatientRecord, Symptom
         
+        symptoms = [Symptom(name="complete", severity=None, duration=None)]
         record = PatientRecord(
             name="Session End Test",
             age=50,
-            symptoms=["complete"],
-            severity=None,
-            duration=None,
+            symptoms=symptoms,
+            overall_severity=None,
+            overall_duration=None,
             medications=[]
         )
         

@@ -27,28 +27,35 @@ class TestPatientRecord:
         assert record.name is None
         assert record.age is None
         assert record.symptoms == []
-        assert record.severity is None
-        assert record.duration is None
+        assert record.overall_severity is None
+        assert record.overall_duration is None
         assert record.medications == []
     
     def test_patient_record_with_values(self):
         """Test PatientRecord with actual values."""
-        from agent import PatientRecord
+        from agent import PatientRecord, Symptom
         
+        symptoms = [
+            Symptom(name="headache", severity=7, duration="2 days"),
+            Symptom(name="fatigue", severity=5, duration="1 week")
+        ]
         record = PatientRecord(
             name="John Doe",
             age=35,
-            symptoms=["headache", "fatigue"],
-            severity=7,
-            duration="3 days",
+            symptoms=symptoms,
+            overall_severity=6,
+            overall_duration="3 days",
             medications=["ibuprofen"]
         )
         
         assert record.name == "John Doe"
         assert record.age == 35
-        assert record.symptoms == ["headache", "fatigue"]
-        assert record.severity == 7
-        assert record.duration == "3 days"
+        assert len(record.symptoms) == 2
+        assert record.symptoms[0].name == "headache"
+        assert record.symptoms[0].severity == 7
+        assert record.symptoms[0].duration == "2 days"
+        assert record.overall_severity == 6
+        assert record.overall_duration == "3 days"
         assert record.medications == ["ibuprofen"]
     
     def test_patient_record_to_dict(self):
