@@ -1,0 +1,29 @@
+# Backend Dependencies for AI Voice Intake Agent
+
+# LiveKit Agent Framework
+livekit-agents>=0.8.0
+livekit-plugins-openai>=0.8.0
+livekit-plugins-deepgram>=0.8.0
+livekit-plugins-silero>=0.6.0
+
+# OpenAI for LLM
+openai>=1.0.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Async HTTP client
+httpx>=0.25.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Database
+prisma>=0.11.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# ElevenLabs TTS (optional - can use OpenAI TTS instead)
+# elevenlabs>=1.0.0
