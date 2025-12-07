@@ -96,7 +96,7 @@ async def generate_clinical_summary(
     """
     import httpx
     
-    # Use OpenRouter if key available, otherwise OpenAI
+    # Use OpenRouter with Qwen for fast summary generation
     openrouter_key = api_key or os.getenv("OPENROUTER_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
     
@@ -106,7 +106,8 @@ async def generate_clinical_summary(
             "Authorization": f"Bearer {openrouter_key}",
             "Content-Type": "application/json"
         }
-        model = "openai/gpt-4o-mini"
+        # Use Qwen 2.5 Coder for structured output (fast and accurate)
+        model = "qwen/qwen-2.5-coder-32b-instruct"
     elif openai_key:
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
@@ -118,14 +119,34 @@ async def generate_clinical_summary(
         raise ValueError("No API key found. Set OPENROUTER_API_KEY or OPENAI_API_KEY")
     
     # Build the user message with patient data
+    # Format symptoms properly from the new structure
+    symptoms_list = patient_data.get('symptoms', [])
+    if symptoms_list and isinstance(symptoms_list[0], dict):
+        # New format: list of symptom objects
+        formatted_symptoms = []
+        for s in symptoms_list:
+            symptom_str = s.get('name', 'Unknown')
+            if s.get('severity'):
+                symptom_str += f" (Severity: {s['severity']}/10)"
+            if s.get('duration'):
+                symptom_str += f" (Duration: {s['duration']})"
+            if s.get('notes'):
+                symptom_str += f" - Notes: {s['notes']}"
+            formatted_symptoms.append(symptom_str)
+        symptoms_text = '; '.join(formatted_symptoms) if formatted_symptoms else 'Not reported'
+    else:
+        # Old format: list of strings
+        symptoms_text = ', '.join(symptoms_list) if symptoms_list else 'Not reported'
+    
     user_content = f"""Generate a clinical SOAP note for this patient:
 
 Patient Data:
 - Name: {patient_data.get('name', 'Not provided')}
 - Age: {patient_data.get('age', 'Not provided')}
-- Symptoms: {', '.join(patient_data.get('symptoms', [])) or 'Not reported'}
-- Severity: {patient_data.get('severity', 'Not reported')}/10
-- Duration: {patient_data.get('duration', 'Not reported')}
+- Gender: {patient_data.get('gender', 'Not provided')}
+- Symptoms: {symptoms_text}
+- Overall Severity: {patient_data.get('overall_severity', 'See individual symptoms')}/10
+- Overall Duration: {patient_data.get('overall_duration', 'See individual symptoms')}
 - Current Medications: {', '.join(patient_data.get('medications', [])) or 'None reported'}
 """
     

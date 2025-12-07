@@ -2,6 +2,7 @@ export interface Symptom {
     name: string;
     severity: number | null;
     duration: string | null;
+    notes: string | null;
 }
 
 export interface PatientRecord {
@@ -24,7 +25,13 @@ export interface LockedFields {
     medications: boolean;
 }
 
+export interface TranscriptEntry {
+    role: 'patient' | 'agent';
+    content: string;
+}
+
 export interface DataMessage {
     type: 'UPDATE_RECORD' | 'SESSION_END';
     data: PatientRecord;
+    transcript?: TranscriptEntry[];
 }

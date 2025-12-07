@@ -5,7 +5,7 @@ import { Room, RoomEvent } from 'livekit-client';
 import PatientForm from '@/components/PatientForm';
 import ConnectionStatus from '@/components/ConnectionStatus';
 import ClinicianSummary from '@/components/ClinicianSummary';
-import { PatientRecord, LockedFields, DataMessage, Symptom } from '@/types/patient';
+import { PatientRecord, LockedFields, DataMessage, Symptom, TranscriptEntry } from '@/types/patient';
 
 const initialRecord: PatientRecord = {
     name: null,
@@ -42,6 +42,7 @@ export default function Home() {
     const roomRef = useRef<Room | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const lockedFieldsRef = useRef(lockedFields);
+    const transcriptRef = useRef<TranscriptEntry[]>([]);
 
     // Keep ref in sync with state
     lockedFieldsRef.current = lockedFields;
@@ -114,6 +115,11 @@ export default function Home() {
 
                         return updated;
                     });
+
+                    // Store transcript if provided
+                    if (message.transcript) {
+                        transcriptRef.current = message.transcript;
+                    }
                 } else if (message.type === 'SESSION_END') {
                     setSessionEnded(true);
                 }
@@ -164,11 +170,26 @@ export default function Home() {
     const handleGenerateSummary = useCallback(async () => {
         setIsGeneratingSummary(true);
 
+        // End the session first - disconnect from voice agent
+        if (roomRef.current) {
+            roomRef.current.disconnect();
+            roomRef.current = null;
+        }
+        if (audioRef.current) {
+            audioRef.current.remove();
+            audioRef.current = null;
+        }
+        setStatus('disconnected');
+        setSessionEnded(true);
+
         try {
             const res = await fetch('/api/summary', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ patientData: record }),
+                body: JSON.stringify({
+                    patientData: record,
+                    transcript: transcriptRef.current
+                }),
             });
 
             const data = await res.json();

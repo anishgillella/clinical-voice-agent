@@ -116,18 +116,14 @@ export default function PatientForm({
                         {getLockIcon('gender')}
                     </button>
                 </div>
-                <select
+                <input
+                    type="text"
                     value={record.gender || ''}
                     onChange={(e) => onFieldChange('gender', e.target.value || null)}
                     className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${getHighlightClass('gender')} ${lockedFields.gender ? 'bg-amber-50 border-amber-200' : ''}`}
+                    placeholder="Enter gender..."
                     disabled={lockedFields.gender}
-                >
-                    <option value="">Select gender...</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                    <option value="Prefer not to say">Prefer not to say</option>
-                </select>
+                />
             </div>
 
             {/* Symptoms with Per-Symptom Severity & Duration */}
@@ -155,13 +151,18 @@ export default function PatientForm({
                                             {symptom.severity !== null ? `${symptom.severity}/10` : 'Not rated'}
                                         </span>
                                     </div>
-                                    <div className="text-sm text-gray-500">
-                                        <span className="inline-flex items-center gap-1">
+                                    <div className="text-sm text-gray-500 space-y-1">
+                                        <div className="inline-flex items-center gap-1">
                                             ⏱️ Duration:
                                             <span className="font-medium text-gray-700">
                                                 {symptom.duration || 'Not specified'}
                                             </span>
-                                        </span>
+                                        </div>
+                                        {symptom.notes && (
+                                            <div className="mt-2 bg-blue-50 p-2 rounded-md text-blue-700">
+                                                📝 <span className="font-medium">Notes:</span> {symptom.notes}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}

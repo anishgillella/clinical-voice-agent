@@ -75,8 +75,18 @@ CONVERSATION FLOW:
 4. For each symptom, ask about:
    - Severity (1-10) - offer to rate each separately or overall
    - Duration (how long) - offer to specify each separately or overall
+   - Any specific details/notes (e.g., "Was your fever higher earlier? What temperature?")
 5. Ask about current medications
 6. Confirm all information and end session
+
+SYMPTOM NOTES:
+- When patient provides specific details about symptoms, use symptom_notes to record them
+- Examples of notes to capture:
+  - Temperature readings: "fever was 102°F two days ago, now 100°F"
+  - Timing patterns: "headache is worse in the morning"
+  - Triggers: "back pain worsens when sitting"
+  - Changes: "the rash started small and spread"
+- Ask probing questions like: "Has your fever changed over time?" or "Is there anything else about this symptom I should note?"
 
 When all required information is gathered, call the `end_session` function.
 """
@@ -84,13 +94,19 @@ When all required information is gathered, call the `end_session` function.
 
 @dataclass
 class Symptom:
-    """A symptom with its own severity and duration."""
+    """A symptom with its own severity, duration, and notes."""
     name: str
     severity: Optional[int] = None  # 1-10 scale, None if not yet rated
     duration: Optional[str] = None  # e.g., "3 days", "2 weeks"
+    notes: Optional[str] = None  # e.g., "102°F two days ago, now 100°F"
     
     def to_dict(self) -> dict:
-        return {"name": self.name, "severity": self.severity, "duration": self.duration}
+        return {
+            "name": self.name, 
+            "severity": self.severity, 
+            "duration": self.duration,
+            "notes": self.notes
+        }
 
 
 @dataclass
@@ -122,22 +138,30 @@ class PatientRecord:
         """Get list of symptom names for backward compatibility."""
         return [s.name for s in self.symptoms]
     
-    def add_symptom(self, name: str, severity: Optional[int] = None, duration: Optional[str] = None) -> bool:
+    def add_symptom(self, name: str, severity: Optional[int] = None, duration: Optional[str] = None, notes: Optional[str] = None) -> bool:
         """Add a symptom if not already present. Returns True if added."""
         # Check if symptom already exists
         for s in self.symptoms:
             if s.name.lower() == name.lower():
-                # Update severity/duration if provided
+                # Update severity/duration/notes if provided
                 if severity is not None:
                     s.severity = min(max(severity, 1), 10)
                 if duration is not None:
                     s.duration = duration
+                if notes is not None:
+                    # Only append if not already present (avoid duplicates)
+                    if s.notes:
+                        if notes.lower() not in s.notes.lower():
+                            s.notes = f"{s.notes}; {notes}"
+                    else:
+                        s.notes = notes
                 return False
         # Add new symptom
         self.symptoms.append(Symptom(
             name=name, 
             severity=min(max(severity, 1), 10) if severity else None,
-            duration=duration
+            duration=duration,
+            notes=notes
         ))
         return True
     
@@ -154,6 +178,19 @@ class PatientRecord:
         for s in self.symptoms:
             if s.name.lower() == symptom_name.lower():
                 s.duration = duration
+                return True
+        return False
+    
+    def set_symptom_notes(self, symptom_name: str, notes: str) -> bool:
+        """Set or append notes for a specific symptom. Returns True if found."""
+        for s in self.symptoms:
+            if s.name.lower() == symptom_name.lower():
+                if s.notes:
+                    # Only append if not already present (avoid duplicates)
+                    if notes.lower() not in s.notes.lower():
+                        s.notes = f"{s.notes}; {notes}"
+                else:
+                    s.notes = notes
                 return True
         return False
     
@@ -175,6 +212,7 @@ class PatientRecord:
 # Global patient record for the session
 _patient_record = PatientRecord()
 _room: Optional[rtc.Room] = None
+_transcript: list[dict] = []  # Store conversation transcript
 
 
 def set_room(room: rtc.Room):
@@ -188,10 +226,21 @@ def get_patient_record() -> PatientRecord:
     return _patient_record
 
 
+def get_transcript() -> list[dict]:
+    """Get the conversation transcript."""
+    return _transcript
+
+
+def add_to_transcript(role: str, content: str):
+    """Add a message to the transcript."""
+    _transcript.append({"role": role, "content": content})
+
+
 def reset_patient_record():
     """Reset the patient record for a new session."""
-    global _patient_record
+    global _patient_record, _transcript
     _patient_record = PatientRecord()
+    _transcript = []
 
 
 async def _broadcast_update():
@@ -202,7 +251,8 @@ async def _broadcast_update():
         
     message = json.dumps({
         "type": "UPDATE_RECORD",
-        "data": _patient_record.to_dict()
+        "data": _patient_record.to_dict(),
+        "transcript": _transcript  # Include transcript for summary
     })
     
     await _room.local_participant.publish_data(
@@ -220,6 +270,7 @@ async def update_patient_record(
     symptom: Annotated[Optional[str], "A symptom the patient is experiencing"] = None,
     symptom_severity: Annotated[Optional[int], "Severity for the specific symptom just mentioned (1-10). Use this when rating a single symptom."] = None,
     symptom_duration: Annotated[Optional[str], "Duration for the specific symptom just mentioned, e.g. '3 days'. Use this when a symptom has its own duration."] = None,
+    symptom_notes: Annotated[Optional[str], "Additional notes about a symptom, e.g. 'fever was 102°F two days ago, now 100°F'. Use this for tracking changes or details."] = None,
     overall_severity: Annotated[Optional[int], "Overall severity when patient gives a single rating for all symptoms (1-10). Applied to symptoms without individual ratings."] = None,
     overall_duration: Annotated[Optional[str], "Overall duration when patient gives a single duration for all symptoms, e.g. '2 weeks'. Applied to symptoms without individual durations."] = None,
     medication: Annotated[Optional[str], "A medication the patient is currently taking"] = None,
@@ -228,10 +279,11 @@ async def update_patient_record(
     Update the patient's medical record with extracted information.
     Call this immediately when the patient provides any relevant information.
     
-    For symptoms, severity, and duration:
-    - When a patient reports a symptom WITH its severity/duration, use symptom + symptom_severity + symptom_duration together
+    For symptoms, severity, duration, and notes:
+    - When a patient reports a symptom WITH its severity/duration/notes, use symptom + symptom_severity + symptom_duration + symptom_notes together
     - When a patient gives ONE severity/duration for ALL symptoms, use overall_severity and/or overall_duration
     - The overall values will be applied to any symptoms that don't have individual ratings
+    - Use symptom_notes for additional details like temperature readings, changes over time, etc.
     """
     updates = []
     
@@ -244,18 +296,32 @@ async def update_patient_record(
         updates.append(f"age: {age}")
     
     if gender is not None:
-        _patient_record.gender = gender
-        updates.append(f"gender: {gender}")
+        # Normalize gender variations to standard values
+        gender_lower = gender.lower().strip()
+        if gender_lower in ['male', 'man', 'guy', 'boy', 'm']:
+            normalized_gender = 'Male'
+        elif gender_lower in ['female', 'woman', 'girl', 'lady', 'f']:
+            normalized_gender = 'Female'
+        elif gender_lower in ['non-binary', 'nonbinary', 'nb', 'other', 'they']:
+            normalized_gender = 'Other'
+        elif gender_lower in ['prefer not to say', 'prefer not', 'rather not say', 'private']:
+            normalized_gender = 'Prefer not to say'
+        else:
+            normalized_gender = gender  # Keep original if not recognized
+        _patient_record.gender = normalized_gender
+        updates.append(f"gender: {normalized_gender}")
     
     if symptom is not None:
-        # Add symptom with optional per-symptom severity and duration
-        added = _patient_record.add_symptom(symptom, symptom_severity, symptom_duration)
+        # Add symptom with optional per-symptom severity, duration, and notes
+        added = _patient_record.add_symptom(symptom, symptom_severity, symptom_duration, symptom_notes)
         if added:
             details = []
             if symptom_severity:
                 details.append(f"severity: {symptom_severity}/10")
             if symptom_duration:
                 details.append(f"duration: {symptom_duration}")
+            if symptom_notes:
+                details.append(f"notes: {symptom_notes}")
             if details:
                 updates.append(f"symptom: {symptom} ({', '.join(details)})")
             else:
@@ -267,6 +333,9 @@ async def update_patient_record(
             if symptom_duration:
                 _patient_record.set_symptom_duration(symptom, symptom_duration)
                 updates.append(f"updated duration for {symptom}: {symptom_duration}")
+            if symptom_notes:
+                _patient_record.set_symptom_notes(symptom, symptom_notes)
+                updates.append(f"added notes for {symptom}: {symptom_notes}")
     
     if overall_severity is not None:
         _patient_record.overall_severity = min(max(overall_severity, 1), 10)
