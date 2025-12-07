@@ -40,7 +40,11 @@ export async function POST(req: NextRequest) {
         if (!apiKey) {
             // Return a quick local summary if no API key
             const quickSummary = generateQuickSummary(patientData);
-            return NextResponse.json({ summary: quickSummary });
+            return NextResponse.json({
+                summary: quickSummary,
+                urgencyLevel: 'routine',
+                differentialDiagnoses: []
+            });
         }
 
         const isOpenRouter = !!process.env.OPENROUTER_API_KEY;
@@ -51,45 +55,58 @@ export async function POST(req: NextRequest) {
         // Format symptoms properly with all details
         const symptomsText = formatSymptoms(patientData.symptoms || []);
 
-        const systemPrompt = `You are an expert medical scribe. Generate a professional SOAP note from the patient intake data.
-
-FORMAT YOUR RESPONSE EXACTLY AS:
-
-## Patient Information
-- **Name:** [patient name]
-- **Age:** [age]
-- **Gender:** [gender]
-
-## Chief Complaint
-[Main reason for visit - use the first symptom listed]
-
-## Subjective
-[Patient's description of symptoms, including severity, duration, and any notes for each symptom. Be specific and detailed.]
-
-## Objective
-[List all symptoms with their severity ratings, durations, and notes. List all medications.]
-
-## Assessment
-[Clinical impression based on reported symptoms. Note: Preliminary pending physician evaluation.]
-
-## Plan
-[Recommended next steps: further evaluation, tests to consider, follow-up]
-
----
-*Auto-generated from patient intake - requires physician review*
-
-RULES:
-- Use professional medical terminology
-- INCLUDE ALL symptom details provided (severity, duration, notes)
-- Only include information explicitly provided
-- Do NOT invent medical details`;
-
         // Format transcript if available
         const transcriptText = transcript && transcript.length > 0
             ? '\n\nFull Conversation Transcript:\n' + transcript.map(t => `${t.role.toUpperCase()}: ${t.content}`).join('\n')
             : '';
 
-        const userContent = `Generate a clinical SOAP note for this patient:
+        const systemPrompt = `You are an expert medical scribe and clinical decision support system. Generate a comprehensive clinical report that includes:
+
+1. A SOAP note
+2. Urgency assessment
+3. Differential diagnoses with reasoning
+
+FORMAT YOUR RESPONSE AS VALID JSON:
+{
+    "soapNote": {
+        "patientInfo": {
+            "name": "...",
+            "age": "...",
+            "gender": "..."
+        },
+        "chiefComplaint": "Main reason for visit",
+        "subjective": "Patient's description including all symptoms, notes, and context from the conversation",
+        "objective": "All reported symptoms with severity, duration, notes. Current medications.",
+        "assessment": "Clinical impression and urgency level",
+        "plan": ["Step 1", "Step 2", "Step 3"]
+    },
+    "urgency": {
+        "level": "routine|soon|urgent|emergent",
+        "reasoning": "Why this urgency level was assigned",
+        "timeframe": "e.g., 'routine scheduling', 'within 24-48 hours', 'same day', 'immediate'"
+    },
+    "differentialDiagnoses": [
+        {
+            "condition": "Most likely condition",
+            "probability": 65,
+            "reasoning": "Detailed clinical reasoning explaining why this is considered...",
+            "keyFactors": ["Factor 1", "Factor 2"],
+            "redFlags": ["What to watch for"],
+            "recommendedTests": ["Test 1", "Test 2"]
+        }
+    ],
+    "clinicalNotes": "Any additional context or caveats for the physician"
+}
+
+RULES:
+- Use professional medical terminology
+- Extract ALL details from symptoms, especially the notes field which contains important context
+- Include 3-5 differential diagnoses ranked by probability
+- Probabilities should sum to approximately 100%
+- Be specific in reasoning - reference actual patient data
+- For urgency, consider symptom severity, red flags, and overall clinical picture`;
+
+        const userContent = `Generate a comprehensive clinical report for this patient:
 
 Patient Data:
 - Name: ${patientData.name || 'Not provided'}
@@ -100,7 +117,7 @@ Patient Data:
 - Overall Duration: ${patientData.overall_duration || 'See individual symptoms'}
 - Current Medications: ${patientData.medications?.join(', ') || 'None reported'}${transcriptText}`;
 
-        console.log('Sending to LLM:', userContent);
+        console.log('Sending comprehensive request to LLM:', userContent);
 
         const response = await fetch(url, {
             method: 'POST',
@@ -109,28 +126,52 @@ Patient Data:
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: isOpenRouter ? 'qwen/qwen-2.5-coder-32b-instruct' : 'gpt-4o-mini',
+                model: isOpenRouter ? 'openai/gpt-4o-mini' : 'gpt-4o-mini',
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userContent }
                 ],
                 temperature: 0.3,
-                max_tokens: 2000
+                max_tokens: 3000,
+                response_format: { type: "json_object" }
             })
         });
 
         if (!response.ok) {
             const errorText = await response.text();
             console.error('LLM API error:', errorText);
-            // Fallback to quick summary
             const quickSummary = generateQuickSummary(patientData);
-            return NextResponse.json({ summary: quickSummary });
+            return NextResponse.json({
+                summary: quickSummary,
+                urgencyLevel: 'routine',
+                differentialDiagnoses: []
+            });
         }
 
         const result = await response.json();
-        const summary = result.choices[0].message.content;
+        const content = result.choices[0].message.content;
 
-        return NextResponse.json({ summary });
+        try {
+            const parsed = JSON.parse(content);
+
+            // Format SOAP note as markdown for display
+            const formattedSummary = formatSoapNoteMarkdown(parsed);
+
+            return NextResponse.json({
+                summary: formattedSummary,
+                urgency: parsed.urgency,
+                differentialDiagnoses: parsed.differentialDiagnoses,
+                clinicalNotes: parsed.clinicalNotes,
+                raw: parsed
+            });
+        } catch {
+            console.error('Failed to parse JSON, returning raw content');
+            return NextResponse.json({
+                summary: content,
+                urgencyLevel: 'routine',
+                differentialDiagnoses: []
+            });
+        }
 
     } catch (error) {
         console.error('Summary generation error:', error);
@@ -139,6 +180,35 @@ Patient Data:
             { status: 500 }
         );
     }
+}
+
+function formatSoapNoteMarkdown(parsed: Record<string, unknown>): string {
+    const soap = parsed.soapNote as Record<string, unknown> || {};
+    const patientInfo = soap.patientInfo as Record<string, string> || {};
+    const plan = soap.plan as string[] || [];
+
+    return `## Patient Information
+- **Name:** ${patientInfo.name || 'Not provided'}
+- **Age:** ${patientInfo.age || 'Not provided'}
+- **Gender:** ${patientInfo.gender || 'Not provided'}
+
+## Chief Complaint
+${soap.chiefComplaint || 'Not specified'}
+
+## Subjective
+${soap.subjective || 'Not reported'}
+
+## Objective
+${soap.objective || 'Not reported'}
+
+## Assessment
+${soap.assessment || 'Pending physician evaluation'}
+
+## Plan
+${plan.map((step, i) => `${i + 1}. ${step}`).join('\n')}
+
+---
+*Auto-generated from patient intake - requires physician review*`;
 }
 
 function formatSymptoms(symptoms: Symptom[]): string {

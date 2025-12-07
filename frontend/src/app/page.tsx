@@ -38,6 +38,10 @@ export default function Home() {
     const [viewMode, setViewMode] = useState<ViewMode>('intake');
     const [summary, setSummary] = useState<string>('');
     const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+    const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+    const [urgency, setUrgency] = useState<{ level: string; reasoning: string; timeframe: string } | undefined>();
+    const [differentialDiagnoses, setDifferentialDiagnoses] = useState<{ condition: string; probability: number; reasoning: string; keyFactors?: string[]; redFlags?: string[]; recommendedTests?: string[] }[]>([]);
+    const [clinicalNotes, setClinicalNotes] = useState<string>('');
 
     const roomRef = useRef<Room | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -116,9 +120,10 @@ export default function Home() {
                         return updated;
                     });
 
-                    // Store transcript if provided
+                    // Store transcript if provided (both ref for summary and state for UI)
                     if (message.transcript) {
                         transcriptRef.current = message.transcript;
+                        setTranscript(message.transcript);
                     }
                 } else if (message.type === 'SESSION_END') {
                     setSessionEnded(true);
@@ -194,6 +199,9 @@ export default function Home() {
 
             const data = await res.json();
             setSummary(data.summary);
+            setUrgency(data.urgency);
+            setDifferentialDiagnoses(data.differentialDiagnoses || []);
+            setClinicalNotes(data.clinicalNotes || '');
             setViewMode('summary');
         } catch (error) {
             console.error('Summary generation error:', error);
@@ -217,6 +225,9 @@ export default function Home() {
                 patientName={record.name || 'Patient'}
                 onBack={handleBackToIntake}
                 onSave={(edited) => setSummary(edited)}
+                urgency={urgency as { level: 'routine' | 'soon' | 'urgent' | 'emergent'; reasoning: string; timeframe: string } | undefined}
+                differentialDiagnoses={differentialDiagnoses}
+                clinicalNotes={clinicalNotes}
             />
         );
     }
@@ -276,15 +287,7 @@ export default function Home() {
                             </div>
                         </div>
 
-                        {/* Audio Indicator */}
-                        {status === 'connected' && (
-                            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 flex items-center justify-center">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse" />
-                                    <span className="text-green-400">Agent is listening...</span>
-                                </div>
-                            </div>
-                        )}
+
 
                         {/* Generate Summary Button */}
                         {(sessionEnded || record.name) && (
