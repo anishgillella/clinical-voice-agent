@@ -1,28 +1,33 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { Room, RoomEvent, DataPacket_Kind } from 'livekit-client';
+import { useState, useCallback, useRef } from 'react';
+import { Room, RoomEvent } from 'livekit-client';
 import PatientForm from '@/components/PatientForm';
 import ConnectionStatus from '@/components/ConnectionStatus';
-import { PatientRecord, LockedFields, DataMessage } from '@/types/patient';
+import ClinicianSummary from '@/components/ClinicianSummary';
+import { PatientRecord, LockedFields, DataMessage, Symptom, TranscriptEntry } from '@/types/patient';
 
 const initialRecord: PatientRecord = {
     name: null,
     age: null,
+    gender: null,
     symptoms: [],
-    severity: null,
-    duration: null,
+    overall_severity: null,
+    overall_duration: null,
     medications: [],
 };
 
 const initialLocked: LockedFields = {
     name: false,
     age: false,
+    gender: false,
     symptoms: false,
     severity: false,
     duration: false,
     medications: false,
 };
+
+type ViewMode = 'intake' | 'summary';
 
 export default function Home() {
     const [status, setStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
@@ -30,19 +35,29 @@ export default function Home() {
     const [lockedFields, setLockedFields] = useState<LockedFields>(initialLocked);
     const [highlightedField, setHighlightedField] = useState<string | null>(null);
     const [sessionEnded, setSessionEnded] = useState(false);
+    const [viewMode, setViewMode] = useState<ViewMode>('intake');
+    const [summary, setSummary] = useState<string>('');
+    const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+    const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+    const [urgency, setUrgency] = useState<{ level: string; reasoning: string; timeframe: string } | undefined>();
+    const [differentialDiagnoses, setDifferentialDiagnoses] = useState<{ condition: string; probability: number; reasoning: string; keyFactors?: string[]; redFlags?: string[]; recommendedTests?: string[] }[]>([]);
+    const [clinicalNotes, setClinicalNotes] = useState<string>('');
 
     const roomRef = useRef<Room | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const lockedFieldsRef = useRef(lockedFields);
+    const transcriptRef = useRef<TranscriptEntry[]>([]);
+
+    // Keep ref in sync with state
+    lockedFieldsRef.current = lockedFields;
 
     const handleConnect = useCallback(async () => {
         setStatus('connecting');
 
         try {
-            // Get token from our API
             const res = await fetch('/api/token?room=intake-room&name=patient');
             const { token, url } = await res.json();
 
-            // Create and connect to room
             const room = new Room({
                 audioCaptureDefaults: {
                     autoGainControl: true,
@@ -51,8 +66,7 @@ export default function Home() {
                 },
             });
 
-            // Handle incoming audio
-            room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            room.on(RoomEvent.TrackSubscribed, (track) => {
                 if (track.kind === 'audio') {
                     const audioElement = track.attach();
                     document.body.appendChild(audioElement);
@@ -64,45 +78,53 @@ export default function Home() {
                 track.detach().forEach((el) => el.remove());
             });
 
-            // Handle data messages from agent
             room.on(RoomEvent.DataReceived, (payload: Uint8Array) => {
                 const decoder = new TextDecoder();
                 const message: DataMessage = JSON.parse(decoder.decode(payload));
 
                 if (message.type === 'UPDATE_RECORD') {
-                    // Update only unlocked fields
                     setRecord((prev) => {
                         const updated = { ...prev };
                         const data = message.data;
+                        const locked = lockedFieldsRef.current;
 
-                        // Check each field and only update if not locked
-                        if (!lockedFields.name && data.name !== prev.name) {
+                        if (!locked.name && data.name !== prev.name) {
                             updated.name = data.name;
                             triggerHighlight('name');
                         }
-                        if (!lockedFields.age && data.age !== prev.age) {
+                        if (!locked.age && data.age !== prev.age) {
                             updated.age = data.age;
                             triggerHighlight('age');
                         }
-                        if (!lockedFields.symptoms && JSON.stringify(data.symptoms) !== JSON.stringify(prev.symptoms)) {
+                        if (!locked.gender && data.gender !== prev.gender) {
+                            updated.gender = data.gender;
+                            triggerHighlight('gender');
+                        }
+                        if (!locked.symptoms && JSON.stringify(data.symptoms) !== JSON.stringify(prev.symptoms)) {
                             updated.symptoms = data.symptoms;
                             triggerHighlight('symptoms');
                         }
-                        if (!lockedFields.severity && data.severity !== prev.severity) {
-                            updated.severity = data.severity;
+                        if (!locked.severity && data.overall_severity !== prev.overall_severity) {
+                            updated.overall_severity = data.overall_severity;
                             triggerHighlight('severity');
                         }
-                        if (!lockedFields.duration && data.duration !== prev.duration) {
-                            updated.duration = data.duration;
+                        if (!locked.duration && data.overall_duration !== prev.overall_duration) {
+                            updated.overall_duration = data.overall_duration;
                             triggerHighlight('duration');
                         }
-                        if (!lockedFields.medications && JSON.stringify(data.medications) !== JSON.stringify(prev.medications)) {
+                        if (!locked.medications && JSON.stringify(data.medications) !== JSON.stringify(prev.medications)) {
                             updated.medications = data.medications;
                             triggerHighlight('medications');
                         }
 
                         return updated;
                     });
+
+                    // Store transcript if provided (both ref for summary and state for UI)
+                    if (message.transcript) {
+                        transcriptRef.current = message.transcript;
+                        setTranscript(message.transcript);
+                    }
                 } else if (message.type === 'SESSION_END') {
                     setSessionEnded(true);
                 }
@@ -122,7 +144,7 @@ export default function Home() {
             console.error('Connection error:', error);
             setStatus('disconnected');
         }
-    }, [lockedFields]);
+    }, []);
 
     const handleDisconnect = useCallback(() => {
         if (roomRef.current) {
@@ -141,9 +163,8 @@ export default function Home() {
         setTimeout(() => setHighlightedField(null), 1000);
     };
 
-    const handleFieldChange = useCallback((field: keyof PatientRecord, value: string | number | string[]) => {
+    const handleFieldChange = useCallback((field: keyof PatientRecord, value: string | number | Symptom[] | string[] | null) => {
         setRecord((prev) => ({ ...prev, [field]: value }));
-        // Auto-lock field when user edits it
         setLockedFields((prev) => ({ ...prev, [field]: true }));
     }, []);
 
@@ -151,6 +172,67 @@ export default function Home() {
         setLockedFields((prev) => ({ ...prev, [field]: !prev[field] }));
     }, []);
 
+    const handleGenerateSummary = useCallback(async () => {
+        setIsGeneratingSummary(true);
+
+        // End the session first - disconnect from voice agent
+        if (roomRef.current) {
+            roomRef.current.disconnect();
+            roomRef.current = null;
+        }
+        if (audioRef.current) {
+            audioRef.current.remove();
+            audioRef.current = null;
+        }
+        setStatus('disconnected');
+        setSessionEnded(true);
+
+        try {
+            const res = await fetch('/api/summary', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    patientData: record,
+                    transcript: transcriptRef.current
+                }),
+            });
+
+            const data = await res.json();
+            setSummary(data.summary);
+            setUrgency(data.urgency);
+            setDifferentialDiagnoses(data.differentialDiagnoses || []);
+            setClinicalNotes(data.clinicalNotes || '');
+            setViewMode('summary');
+        } catch (error) {
+            console.error('Summary generation error:', error);
+            // Generate a quick local summary as fallback
+            setSummary(generateQuickSummary(record));
+            setViewMode('summary');
+        } finally {
+            setIsGeneratingSummary(false);
+        }
+    }, [record]);
+
+    const handleBackToIntake = useCallback(() => {
+        setViewMode('intake');
+    }, []);
+
+    // Render Clinician Summary view
+    if (viewMode === 'summary') {
+        return (
+            <ClinicianSummary
+                summary={summary}
+                patientName={record.name || 'Patient'}
+                onBack={handleBackToIntake}
+                onSave={(edited) => setSummary(edited)}
+                urgency={urgency as { level: 'routine' | 'soon' | 'urgent' | 'emergent'; reasoning: string; timeframe: string } | undefined}
+                differentialDiagnoses={differentialDiagnoses}
+                clinicalNotes={clinicalNotes}
+            />
+        );
+    }
+
+    // Render Intake view
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
             <div className="container mx-auto px-4 py-8">
@@ -164,7 +246,7 @@ export default function Home() {
 
                 {/* Main Content */}
                 <div className="grid lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
-                    {/* Left Panel - Connection & Instructions */}
+                    {/* Left Panel */}
                     <div className="space-y-6">
                         {/* Connection Status Card */}
                         <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
@@ -182,7 +264,7 @@ export default function Home() {
                             <ol className="space-y-3 text-gray-300">
                                 <li className="flex gap-3">
                                     <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm">1</span>
-                                    <span>Click "Start Interview" to connect to the AI agent</span>
+                                    <span>Click &quot;Start Interview&quot; to connect to the AI agent</span>
                                 </li>
                                 <li className="flex gap-3">
                                     <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm">2</span>
@@ -194,7 +276,7 @@ export default function Home() {
                                 </li>
                                 <li className="flex gap-3">
                                     <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm">4</span>
-                                    <span>Watch the form update in real-time!</span>
+                                    <span>Click &quot;Generate Summary&quot; when finished</span>
                                 </li>
                             </ol>
 
@@ -205,14 +287,26 @@ export default function Home() {
                             </div>
                         </div>
 
-                        {/* Audio Indicator */}
-                        {status === 'connected' && (
-                            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 flex items-center justify-center">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse" />
-                                    <span className="text-green-400">Agent is listening...</span>
-                                </div>
-                            </div>
+
+
+                        {/* Generate Summary Button */}
+                        {(sessionEnded || record.name) && (
+                            <button
+                                onClick={handleGenerateSummary}
+                                disabled={isGeneratingSummary}
+                                className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-2xl font-semibold text-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-3"
+                            >
+                                {isGeneratingSummary ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        Generating Summary...
+                                    </>
+                                ) : (
+                                    <>
+                                        📄 Generate Clinician Summary
+                                    </>
+                                )}
+                            </button>
                         )}
                     </div>
 
@@ -238,4 +332,40 @@ export default function Home() {
             </div>
         </div>
     );
+}
+
+function generateQuickSummary(record: PatientRecord): string {
+    const symptomList = record.symptoms.map(s =>
+        s.severity !== null ? `${s.name} (${s.severity}/10)` : s.name
+    );
+    const chiefComplaint = record.symptoms.length > 0 ? record.symptoms[0].name : 'Not specified';
+
+    return `## Patient Information
+- **Name:** ${record.name || 'Unknown'}
+- **Age:** ${record.age || 'Unknown'}
+- **Gender:** ${record.gender || 'Not specified'}
+
+## Chief Complaint
+${chiefComplaint}
+
+## Subjective
+Patient reports ${symptomList.length > 0 ? symptomList.join(', ') : 'unspecified symptoms'}.
+Overall Severity: ${record.overall_severity || 'Not reported'}/10.
+Duration: ${record.overall_duration || 'Not reported'}.
+
+## Objective
+- Symptoms: ${symptomList.join(', ') || 'None reported'}
+- Overall Severity: ${record.overall_severity || 'Not reported'}/10
+- Medications: ${record.medications?.join(', ') || 'None reported'}
+
+## Assessment
+Patient presents for evaluation. Further assessment by physician recommended.
+
+## Plan
+1. Physician review of intake data
+2. Additional evaluation as needed
+3. Follow up as clinically indicated
+
+---
+*Auto-generated summary - requires physician review*`;
 }

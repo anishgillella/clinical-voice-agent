@@ -56,12 +56,12 @@ async def entrypoint(ctx: JobContext):
     # Create the agent
     agent = create_agent()
 
-    # Use OpenRouter for LLM (GPT-4o-mini via OpenRouter)
+    # Use OpenRouter for LLM
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     
-    # Create LLM client - use OpenRouter if available, otherwise OpenAI
+    # Create LLM client - GPT-4o-mini handles optional function params correctly
     if openrouter_key:
-        logger.info("Using OpenRouter for LLM")
+        logger.info("Using OpenRouter with GPT-4o-mini for LLM")
         llm_client = openai.LLM(
             model="openai/gpt-4o-mini",
             base_url="https://openrouter.ai/api/v1",
@@ -79,6 +79,22 @@ async def entrypoint(ctx: JobContext):
         llm=llm_client,
         tts=elevenlabs.TTS(),  # ElevenLabs TTS - no OpenAI needed!
     )
+
+    # Import transcript collector
+    from agent import add_to_transcript
+    
+    # Collect transcript from user speech
+    @session.on("user_speech_committed")
+    def on_user_speech(msg):
+        if hasattr(msg, 'transcript') and msg.transcript:
+            add_to_transcript("patient", msg.transcript)
+            logger.info(f"Patient said: {msg.transcript}")
+    
+    # Collect transcript from agent speech
+    @session.on("agent_speech_committed")  
+    def on_agent_speech(msg):
+        if hasattr(msg, 'content') and msg.content:
+            add_to_transcript("agent", msg.content)
 
     # Start the session
     await session.start(
