@@ -72,12 +72,11 @@ async def entrypoint(ctx: JobContext):
         llm_client = openai.LLM(model="gpt-4o-mini")
 
     # Create the agent session with voice components
-    # Using ElevenLabs for TTS (no OpenAI needed!)
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         stt=deepgram.STT(),
         llm=llm_client,
-        tts=elevenlabs.TTS(),  # ElevenLabs TTS - no OpenAI needed!
+        tts=elevenlabs.TTS(),
     )
 
     # Import transcript collector
@@ -106,7 +105,7 @@ async def entrypoint(ctx: JobContext):
 
     # Send initial greeting
     await session.say(
-        "Hello! I'm your medical intake assistant. Could you please start by telling me your name and age?",
+        "Hello! I'm your medical intake assistant. Could you please start by telling me your name?",
         allow_interruptions=True
     )
 

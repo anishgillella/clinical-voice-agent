@@ -16,6 +16,10 @@ build/
 .env.local
 *.env
 
+# Node
+node_modules/
+.next/
+
 # IDE
 .vscode/
 .idea/
@@ -44,3 +48,10 @@ htmlcov/
 *.tmp
 temp/
 tmp/
+
+# Patient data (contains PHI)
+data/
+backend/data/patients/
+
+# Sound files (optional assets)
+frontend/public/sounds/
