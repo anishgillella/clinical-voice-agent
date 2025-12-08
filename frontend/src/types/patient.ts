@@ -9,6 +9,7 @@ export interface PatientRecord {
     name: string | null;
     age: number | null;
     gender: string | null;
+    dob: string | null;  // Date of Birth in MM-DD-YYYY format
     symptoms: Symptom[];
     overall_severity: number | null;
     overall_duration: string | null;
@@ -19,6 +20,7 @@ export interface LockedFields {
     name: boolean;
     age: boolean;
     gender: boolean;
+    dob: boolean;
     symptoms: boolean;
     severity: boolean;
     duration: boolean;

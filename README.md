@@ -130,51 +130,118 @@ Include:
 ### Prerequisites
 
 ```bash
-# Add your prerequisites here
-# Node.js version X.X.X
-# Python version X.X.X
-# etc.
+# Node.js version 18+ (for frontend)
+# Python version 3.12+ (for backend)
+# FFmpeg (for audio processing)
+
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+
+# Windows
+# Download from https://ffmpeg.org/download.html
 ```
 
 ### Installation
 
+**Frontend:**
 ```bash
-# Add installation steps
+cd frontend
 npm install
-# or
+```
+
+**Backend:**
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
 ### Configuration
 
+**Environment Variables:**
+
+Create `.env` file in the root directory:
 ```bash
-# Add environment variables needed
-cp .env.example .env
-# Configure your API keys for:
-# - LLM provider
-# - STT provider
-# - TTS provider
-# - LiveKit or voice infrastructure
+# LLM Provider (OpenRouter)
+OPENROUTER_API_KEY=your_openrouter_api_key
+
+# LiveKit (Voice Infrastructure)
+LIVEKIT_API_KEY=your_livekit_api_key
+LIVEKIT_API_SECRET=your_livekit_api_secret
+LIVEKIT_URL=wss://your-project.livekit.cloud
+
+# Frontend (Next.js)
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
+
+# Speech Services (automatically configured)
+# Deepgram STT - Uses LiveKit's Deepgram integration
+# ElevenLabs TTS - Uses LiveKit's ElevenLabs integration
 ```
+
+**API Key Setup:**
+1. **OpenRouter**: Get API key from [https://openrouter.ai/](https://openrouter.ai/)
+2. **LiveKit**: Create account at [https://livekit.io/](https://livekit.io/) → Get API credentials
 
 ### Running Locally
 
+**Terminal 1 - Backend (Voice Agent):**
 ```bash
-# Add commands to run the application
-npm run dev
-# or
-python main.py
+cd backend
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+python main.py dev
 ```
+
+**Terminal 2 - Frontend (Web Interface):**
+```bash
+cd frontend
+npm run dev
+```
+
+**Access:**
+- Frontend: [http://localhost:3000](http://localhost:3000)
+- Backend logs: View in Terminal 1
 
 ---
 
 ## Project Structure
 
 ```
-# Add your project structure here
-├── frontend/          # Web interface
-├── backend/           # Voice agent infrastructure
-├── agent/             # LLM orchestration & function calling
+clinical-voice-agent/
+├── frontend/                      # Next.js web application
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── page.tsx          # Main intake interface
+│   │   │   └── api/
+│   │   │       ├── token/        # LiveKit token generation
+│   │   │       └── summary/      # Clinical summary generation
+│   │   ├── components/
+│   │   │   ├── PatientForm.tsx   # Real-time editable form
+│   │   │   ├── ClinicianSummary.tsx  # Summary view
+│   │   │   ├── LiveTranscript.tsx    # Conversation display
+│   │   │   └── VoiceWaveform.tsx # Audio visualization
+│   │   └── types/
+│   │       └── patient.ts        # TypeScript interfaces
+│   └── package.json
+│
+├── backend/                       # Python voice agent
+│   ├── main.py                   # LiveKit worker entry point
+│   ├── agent.py                  # LLM orchestration & function calling
+│   ├── patient_db.py             # Patient data management
+│   ├── data/
+│   │   └── symptom_graph.json   # Medical knowledge graph
+│   └── requirements.txt
+│
+├── data/                          # Patient records (auto-created)
+│   └── [patient_name].json       # Individual patient files
+│
+├── docs/
+│   ├── features.md               # Feature documentation
+│   └── challenges.md             # Development challenges log
+│
 └── README.md
 ```
 
@@ -183,40 +250,117 @@ python main.py
 ## Tech Stack
 
 ### Voice Infrastructure
-- [Your choice: LiveKit, custom implementation, etc.]
+- **LiveKit** - Real-time voice orchestration, state management, turn-taking logic
+- **Custom Agent Implementation** - Proprietary LLM integration and function calling
 
 ### LLM Provider
-- [OpenAI, Anthropic, or open source]
+- **OpenRouter** with **GPT-4o-mini** - Function calling and conversational AI
+- Real-time `update_patient_record()` function calls during conversation
 
 ### Speech Services
-- **STT**: [Deepgram, Whisper, etc.]
-- **TTS**: [ElevenLabs, OpenAI, etc.]
+- **STT**: Deepgram Nova-2 (via LiveKit plugin)
+- **TTS**: ElevenLabs (via LiveKit plugin)
+- **VAD**: Silero Voice Activity Detection
 
 ### Frontend
-- [React, Next.js, Vue, etc.]
+- **Next.js 14** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **TailwindCSS** - Styling
+- **LiveKit Client SDK** - Real-time audio and data channels
 
 ### Backend
-- [Node.js, Python, etc.]
+- **Python 3.12** - Agent runtime
+- **LiveKit Agents SDK** - Voice agent framework
+- **JSON** - Patient database (file-based for demo)
 
 ---
 
 ## Features
 
-- ✅ Real-time voice-to-text transcription
+### Core Requirements
+- ✅ Real-time voice-to-text transcription (Deepgram)
 - ✅ Live UI updates via LLM function calling
 - ✅ Interactive patient record editing during call
 - ✅ Conversation guardrails and topic steering
-- ✅ Structured clinical note generation
+- ✅ Structured clinical note generation (SOAP format)
 - ✅ Clinician review interface
+
+### Enhanced Features
+- ✅ **Patient History Tracking** - Persistent JSON database with visit history
+- ✅ **Returning Patient Recognition** - Welcomes back patients with context
+- ✅ **Symptom Knowledge Graph** - Intelligent follow-up questions
+- ✅ **Urgency Assessment** - Automatic triage level calculation
+- ✅ **Differential Diagnoses** - AI-powered probable conditions
+- ✅ **Live Transcript** - Real-time conversation display
+- ✅ **Voice Waveform** - Visual audio feedback
+- ✅ **Lock/Unlock Fields** - Prevent or allow voice updates per field
+- ✅ **Phone Number Collection** - Patient identification
+- ✅ **Gender Recognition** - Normalizes various inputs
+
+---
+
+## Demo Checklist
+
+### Required Demo Elements (2-3 minutes)
+1. ✅ **Live Data Population**
+   - Show voice conversation
+   - Watch Name, Age, Symptoms populate in real-time
+   - Demonstrate multiple symptom entries
+
+2. ✅ **Interactive Editing**
+   - Manually edit a field (e.g., correct name spelling)
+   - Continue talking while edit persists
+   - Lock a field to prevent voice updates
+
+3. ✅ **Clinician Summary**
+   - Generate structured SOAP note
+   - Show urgency assessment
+   - Display differential diagnoses
+
+### Bonus Demo Elements
+- Patient history (create patient → return later)
+- Symptom follow-up questions
+- Conversation guardrails (off-topic handling)
+
+---
+
+## Development Notes
+
+### Running Tests
+```bash
+cd backend
+pytest
+```
+
+### Patient Data Location
+- Patient files stored in: `data/[patient_name].json`
+- Auto-generated on first patient interaction
+- Updated on subsequent visits
+
+### Troubleshooting
+**Backend won't start:**
+- Check `.env` has all required variables
+- Verify LiveKit credentials are correct
+- Ensure port 8080 is available
+
+**No audio in browser:**
+- Check microphone permissions
+- Verify LiveKit URL is accessible
+- Check browser console for errors
+
+**Fields not updating:**
+- Check backend logs for function calls
+- Verify WebSocket connection in Network tab
+- Ensure fields are not locked
 
 ---
 
 ## License
 
-[Add your license here]
+MIT License - See LICENSE file for details
 
 ---
 
 ## Contact
 
-[Add your contact information]
+For questions about this implementation, please open an issue in the repository.

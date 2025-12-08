@@ -85,10 +85,31 @@ export default function PatientForm({
                 />
             </div>
 
-            {/* Age */}
+            {/* DOB (Date of Birth) - Second, age is derived from this */}
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-700">Age</label>
+                    <label className="text-sm font-medium text-gray-700">Date of Birth</label>
+                    <button
+                        onClick={() => onLockToggle('dob')}
+                        className="p-1 hover:bg-gray-100 rounded"
+                    >
+                        {getLockIcon('dob')}
+                    </button>
+                </div>
+                <input
+                    type="text"
+                    value={record.dob || ''}
+                    onChange={(e) => onFieldChange('dob', e.target.value || null)}
+                    className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${getHighlightClass('dob')} ${lockedFields.dob ? 'bg-amber-50 border-amber-200' : ''}`}
+                    placeholder="MM-DD-YYYY"
+                    disabled={lockedFields.dob}
+                />
+            </div>
+
+            {/* Age - Derived from DOB */}
+            <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-700">Age <span className="text-xs text-gray-400">(from DOB)</span></label>
                     <button
                         onClick={() => onLockToggle('age')}
                         className="p-1 hover:bg-gray-100 rounded"
@@ -101,7 +122,7 @@ export default function PatientForm({
                     value={record.age || ''}
                     onChange={(e) => onFieldChange('age', parseInt(e.target.value) || 0)}
                     className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${getHighlightClass('age')} ${lockedFields.age ? 'bg-amber-50 border-amber-200' : ''}`}
-                    placeholder="Enter age..."
+                    placeholder="Calculated from DOB..."
                 />
             </div>
 

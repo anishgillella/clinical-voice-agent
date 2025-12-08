@@ -11,6 +11,7 @@ const initialRecord: PatientRecord = {
     name: null,
     age: null,
     gender: null,
+    dob: null,
     symptoms: [],
     overall_severity: null,
     overall_duration: null,
@@ -21,6 +22,7 @@ const initialLocked: LockedFields = {
     name: false,
     age: false,
     gender: false,
+    dob: false,
     symptoms: false,
     severity: false,
     duration: false,
@@ -100,6 +102,10 @@ export default function Home() {
                             updated.gender = data.gender;
                             triggerHighlight('gender');
                         }
+                        if (!locked.dob && data.dob !== prev.dob) {
+                            updated.dob = data.dob;
+                            triggerHighlight('dob');
+                        }
                         if (!locked.symptoms && JSON.stringify(data.symptoms) !== JSON.stringify(prev.symptoms)) {
                             updated.symptoms = data.symptoms;
                             triggerHighlight('symptoms');
@@ -158,13 +164,22 @@ export default function Home() {
         setStatus('disconnected');
     }, []);
 
+    // Play typing sound when field updates
+    const playTypingSound = useCallback(() => {
+        const audio = new Audio('/sounds/typing.mp3');
+        audio.volume = 0.3;
+        audio.play().catch(() => { }); // Ignore autoplay errors
+    }, []);
+
     const triggerHighlight = (field: string) => {
         setHighlightedField(field);
+        playTypingSound();
         setTimeout(() => setHighlightedField(null), 1000);
     };
 
     const handleFieldChange = useCallback((field: keyof PatientRecord, value: string | number | Symptom[] | string[] | null) => {
         setRecord((prev) => ({ ...prev, [field]: value }));
+        // Lock the field when user edits so LLM won't override their changes
         setLockedFields((prev) => ({ ...prev, [field]: true }));
     }, []);
 
@@ -239,9 +254,9 @@ export default function Home() {
                 {/* Header */}
                 <div className="text-center mb-8">
                     <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2">
-                        🎤 AI Voice Intake
+                        Clinical Voice Assistant
                     </h1>
-                    <p className="text-gray-400">Medical Intake Agent - Real-Time Data Extraction</p>
+                    <p className="text-gray-400">Intelligent Patient Intake & Documentation</p>
                 </div>
 
                 {/* Main Content */}
