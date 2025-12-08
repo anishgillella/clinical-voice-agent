@@ -217,26 +217,26 @@ clinical-voice-agent/
 │   │   │   ├── page.tsx          # Main intake interface
 │   │   │   └── api/
 │   │   │       ├── token/        # LiveKit token generation
-│   │   │       └── summary/      # Clinical summary generation
+│   │   │       └── summary/      # Clinical summary generation (SOAP format)
 │   │   ├── components/
 │   │   │   ├── PatientForm.tsx   # Real-time editable form
-│   │   │   ├── ClinicianSummary.tsx  # Summary view
-│   │   │   ├── LiveTranscript.tsx    # Conversation display
-│   │   │   └── VoiceWaveform.tsx # Audio visualization
+│   │   │   └── ClinicianSummary.tsx  # Summary view
 │   │   └── types/
 │   │       └── patient.ts        # TypeScript interfaces
 │   └── package.json
 │
 ├── backend/                       # Python voice agent
 │   ├── main.py                   # LiveKit worker entry point
-│   ├── agent.py                  # LLM orchestration & function calling
+│   ├── agent/                    # Agent package
+│   │   ├── __init__.py          # Package exports
+│   │   ├── models.py            # Symptom, PatientRecord dataclasses
+│   │   ├── prompts.py           # System prompt
+│   │   ├── session.py           # State management
+│   │   └── tools.py             # LLM function tools
 │   ├── patient_db.py             # Patient data management
 │   ├── data/
 │   │   └── symptom_graph.json   # Medical knowledge graph
 │   └── requirements.txt
-│
-├── data/                          # Patient records (auto-created)
-│   └── [patient_name].json       # Individual patient files
 │
 ├── docs/
 │   ├── features.md               # Feature documentation
